@@ -61,7 +61,7 @@ def parse_queries_file(filename):
                             current_config["sigma"][var.strip()] = f"row['{parts[0].strip()}']=={parts[1].strip()}"
                 elif curr_section == "G":
 
-                    #replaces 1_sum with obj.v1_sum 
+                    #replaces 1_sum with obj.v1_sum
                     current_config["G"] = re.sub(r"\b([a-zA-Z0-9]+)_", r"obj.v\1_", clean_line).strip()
 
         #add current query configuration to list of queries
@@ -108,8 +108,8 @@ def main():
                     parts = py_cond.split("==")
                     phi["sigma"][var.strip()] = f"row['{parts[0].strip()}']=={parts[1].strip()}"
 
-        raw = input("\nHAVING CONDITION(G):\n> ")
-        phi["G"] = re.sub(r"\b([a-zA-Z0-9]+)_", r"obj.v\1_", raw).strip()
+        raw = input("\nHAVING CONDITION(G) [optional, press Enter to skip]:\n> ").strip()
+        phi["G"] = re.sub(r"\b([a-zA-Z0-9]+)_", r"obj.v\1_", raw).strip() if raw else ""
 
         queries = [phi]
 
@@ -164,17 +164,25 @@ class MFStructureRow:
             setattr(obj, a_attr, getattr(obj, s_attr) / getattr(obj, c_attr))
 """
 
+        # Build the having filter line — omit it entirely if G is empty
+        if phi["G"]:
+            having_check = f"        if {phi['G']}:"
+            result_indent = "            "
+        else:
+            having_check = ""
+            result_indent = "        "
+
         final_logic = f"""
     _global = []
     for key in mf_struct:
         obj = mf_struct[key]
 {avg_loops}
-        if {phi['G']}:
-            res = {{}}
-            for attr in {phi['S']}:
-                target_attr = attr if attr in {phi['V']} else 'v' + attr
-                res[attr] = getattr(obj, target_attr)
-            _global.append(res)
+{having_check}
+{result_indent}res = {{}}
+{result_indent}for attr in {phi['S']}:
+{result_indent}    target_attr = attr if attr in {phi['V']} else 'v' + attr
+{result_indent}    res[attr] = getattr(obj, target_attr)
+{result_indent}_global.append(res)
 """
 
         # 4. Assembly
