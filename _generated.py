@@ -14,9 +14,6 @@ class MFStructureRow:
         self.v5_sum_quant = 0
         self.v6_sum_quant = 0
         self.v6_avg_quant = 0
-        self.v1_count_quant = 0
-        self.v2_count_quant = 0
-        self.v3_count_quant = 0
         self.v4_count_quant = 0
         self.v5_count_quant = 0
         self.v6_count_quant = 0
@@ -39,43 +36,10 @@ def query():
         mf_struct[key] = MFStructureRow(*key)
 
 
-    # SCAN for variable 1
-    cur.execute("SELECT * FROM sales")
-    for row in cur:
-        if row['state']=='NY':
-            key = tuple(row[attr] for attr in ['cust'])
-            obj = mf_struct[key]
-            if hasattr(obj, 'v1_sum_quant'): 
-                obj.v1_sum_quant += row['quant']
-            if hasattr(obj, 'v1_count_quant'):
-                obj.v1_count_quant += 1
-
-    # SCAN for variable 2
-    cur.execute("SELECT * FROM sales")
-    for row in cur:
-        if row['state']=='NJ':
-            key = tuple(row[attr] for attr in ['cust'])
-            obj = mf_struct[key]
-            if hasattr(obj, 'v2_sum_quant'): 
-                obj.v2_sum_quant += row['quant']
-            if hasattr(obj, 'v2_count_quant'):
-                obj.v2_count_quant += 1
-
-    # SCAN for variable 3
-    cur.execute("SELECT * FROM sales")
-    for row in cur:
-        if row['state']=='CT':
-            key = tuple(row[attr] for attr in ['cust'])
-            obj = mf_struct[key]
-            if hasattr(obj, 'v3_sum_quant'): 
-                obj.v3_sum_quant += row['quant']
-            if hasattr(obj, 'v3_count_quant'):
-                obj.v3_count_quant += 1
-
     # SCAN for variable 4
     cur.execute("SELECT * FROM sales")
     for row in cur:
-        if row['state']=='NY':
+        if state=='NY':
             key = tuple(row[attr] for attr in ['cust'])
             obj = mf_struct[key]
             if hasattr(obj, 'v4_sum_quant'): 
@@ -86,7 +50,7 @@ def query():
     # SCAN for variable 5
     cur.execute("SELECT * FROM sales")
     for row in cur:
-        if row['state']=='NJ':
+        if state=='NJ':
             key = tuple(row[attr] for attr in ['cust'])
             obj = mf_struct[key]
             if hasattr(obj, 'v5_sum_quant'): 
@@ -97,7 +61,7 @@ def query():
     # SCAN for variable 6
     cur.execute("SELECT * FROM sales")
     for row in cur:
-        if row['state']=='CT':
+        if state=='CT':
             key = tuple(row[attr] for attr in ['cust'])
             obj = mf_struct[key]
             if hasattr(obj, 'v6_sum_quant'): 
@@ -109,24 +73,6 @@ def query():
     _global = []
     for key in mf_struct:
         obj = mf_struct[key]
-
-        s_attr = 'v1_sum_quant'
-        c_attr = 'v1_count_quant'
-        a_attr = 'v1_avg_quant'
-        if hasattr(obj, a_attr) and getattr(obj, c_attr, 0) > 0:
-            setattr(obj, a_attr, getattr(obj, s_attr) / getattr(obj, c_attr))
-
-        s_attr = 'v2_sum_quant'
-        c_attr = 'v2_count_quant'
-        a_attr = 'v2_avg_quant'
-        if hasattr(obj, a_attr) and getattr(obj, c_attr, 0) > 0:
-            setattr(obj, a_attr, getattr(obj, s_attr) / getattr(obj, c_attr))
-
-        s_attr = 'v3_sum_quant'
-        c_attr = 'v3_count_quant'
-        a_attr = 'v3_avg_quant'
-        if hasattr(obj, a_attr) and getattr(obj, c_attr, 0) > 0:
-            setattr(obj, a_attr, getattr(obj, s_attr) / getattr(obj, c_attr))
 
         s_attr = 'v4_sum_quant'
         c_attr = 'v4_count_quant'
