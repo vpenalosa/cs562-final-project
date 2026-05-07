@@ -130,12 +130,12 @@ def main():
         group_init = "\n".join([f"        self.{attr} = {attr}" for attr in phi["V"]])
         
         class_def = f"""
-    class MFStructureRow:
-        def __init__(self, {', '.join(phi['V'])}):
-    {group_init}
-    {agg_init}
-    {count_trackers}
-        """
+class MFStructureRow:
+    def __init__(self, {', '.join(phi['V'])}):
+{group_init}
+{agg_init}
+{count_trackers}
+"""
 
         # 2. Scans
         scans_code = ""
