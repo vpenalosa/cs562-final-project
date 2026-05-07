@@ -5,6 +5,7 @@ import sys
 
 def parse_queries_file(filename):
     if not os.path.exists(filename):
+        print(f"Error: {filename} not found.")
         return []
     
     all_queries = []
@@ -13,37 +14,44 @@ def parse_queries_file(filename):
 
     with open(filename, 'r') as f:
         for line in f:
-            line = line.strip()
-            if not line: continue
+            clean_line = line.strip()
+            if not clean_line: continue
             
-            # If we see "SELECT ATTRIBUTE", it means a new query block is starting
-            if "SELECT ATTRIBUTE" in line:
+            # Use headers from your file  to split queries
+            if "SELECT ATTRIBUTE" in clean_line.upper():
                 if current_config:
                     all_queries.append(current_config)
                 current_config = {"S": [], "n": 0, "V": [], "F": [], "sigma": {}, "G": ""}
                 curr_section = "S"
-            elif "NUMBER OF GROUPING VARIABLES" in line: curr_section = "n"
-            elif "GROUPING ATTRIBUTES" in line: curr_section = "V"
-            elif "F-VECT" in line: curr_section = "F"
-            elif "SELECT CONDITION-VECT" in line: curr_section = "sigma"
-            elif "HAVING CONDITION" in line: curr_section = "G"
+            elif "NUMBER OF GROUPING" in clean_line.upper(): curr_section = "n"
+            elif "GROUPING ATTRIBUTES" in clean_line.upper(): curr_section = "V"
+            elif "F-VECT" in clean_line.upper(): curr_section = "F"
+            elif "SELECT CONDITION-VECT" in clean_line.upper(): curr_section = "sigma"
+            elif "HAVING CONDITION" in clean_line.upper(): curr_section = "G"
             else:
                 if not current_config: continue
-                # Data parsing logic
-                if curr_section == "S": current_config["S"] = [x.strip() for x in line.split(",")]
-                elif curr_section == "n": current_config["n"] = int(line)
-                elif curr_section == "V": current_config["V"] = [x.strip() for x in line.split(",")]
-                elif curr_section == "F": current_config["F"] = [x.strip() for x in line.split(",")]
+                if curr_section == "S": 
+                    current_config["S"] = [x.strip() for x in clean_line.split(",")]
+                elif curr_section == "n": 
+                    num = re.search(r'\d+', clean_line)
+                    if num: current_config["n"] = int(num.group())
+                elif curr_section == "V": 
+                    current_config["V"] = [x.strip() for x in clean_line.split(",")]
+                elif curr_section == "F": 
+                    current_config["F"] = [x.strip() for x in clean_line.split(",")]
                 elif curr_section == "sigma":
-                    is_match = re.search(r"([a-zA-Z0-9]+)\.(.*)", line)
+                    # Matches 1.state='NY' or 4.state='NY' 
+                    is_match = re.search(r"([a-zA-Z0-9]+)\.(.*)", clean_line)
                     if is_match:
                         var, cond = is_match.groups()
-                        current_config["sigma"][var.strip()] = cond.replace("=", "==")
+                        py_cond = cond.replace("=", "==")
+                        if "==" in py_cond:
+                            parts = py_cond.split("==")
+                            current_config["sigma"][var.strip()] = f"row['{parts[0].strip()}']=={parts[1].strip()}"
                 elif curr_section == "G":
-                    temp_g = re.sub(r"\b([a-zA-Z0-9]+)_", r"obj.v\1_", line)
-                    current_config["G"] = temp_g.replace(";", "").strip()
+                    # Replaces 1_sum with obj.v1_sum 
+                    current_config["G"] = re.sub(r"\b([a-zA-Z0-9]+)_", r"obj.v\1_", clean_line).strip()
 
-        # Append the very last query in the file
         if current_config:
             all_queries.append(current_config)
             
@@ -51,20 +59,16 @@ def parse_queries_file(filename):
 
 def main():
     input_file = sys.argv[1] if len(sys.argv) > 1 else "queries.txt"
-    # queries is now a LIST of dictionaries
     queries = parse_queries_file(input_file)
     
     if not queries:
-        print("Error: No queries found or file is empty.")
+        print("No queries found. Check your queries.txt formatting.")
         return
 
-    # Loop through each query found in the file
     for index, phi in enumerate(queries):
-        print(f"\n{'='*25}")
-        print(f"  RUNNING QUERY {index + 1}")
-        print(f"{'='*25}\n")
+        print(f"\n{'='*20} OUTPUT FOR QUERY {index + 1} {'='*20}")
 
-        # --- 1. Generate MF-Structure Class ---
+        # 1. MF-Structure Class
         agg_init = "\n".join([f"        self.v{agg} = 0" for agg in phi["F"]])
         count_trackers = "\n".join([f"        self.v{v}_count_quant = 0" for v in phi["sigma"].keys()])
         group_init = "\n".join([f"        self.{attr} = {attr}" for attr in phi["V"]])
@@ -77,10 +81,9 @@ class MFStructureRow:
 {count_trackers}
 """
 
-        # --- 2. Generate Scans ---
+        # 2. Scans
         scans_code = ""
-        for var_name in phi["sigma"].keys():
-            cond = phi["sigma"][var_name]
+        for var_name, cond in phi["sigma"].items():
             scans_code += f"""
     # SCAN for variable {var_name}
     cur.execute("SELECT * FROM sales")
@@ -94,7 +97,7 @@ class MFStructureRow:
                 obj.v{var_name}_count_quant += 1
 """
 
-        # --- 3. Final Output Logic ---
+        # 3. Averages & Having
         avg_loops = ""
         for var_name in phi["sigma"].keys():
             avg_loops += f"""
@@ -118,7 +121,7 @@ class MFStructureRow:
             _global.append(res)
 """
 
-        # --- 4. Assemble and Run ---
+        # 4. Assembly
         tmp = f"""
 import os
 import psycopg2
@@ -152,8 +155,10 @@ def query():
 if __name__ == "__main__":
     print(query())
 """
-        # Write and run for THIS specific query
         with open("_generated.py", "w") as f:
             f.write(tmp)
         
         subprocess.run(["python", "_generated.py"])
+
+if __name__ == "__main__":
+    main()
