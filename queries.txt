@@ -5,7 +5,7 @@ NUMBER OF GROUPING VARIABLES(n):
 GROUPING ATTRIBUTES(V):
 cust
 F-VECT([F]):
-1_avg_quant, 2_avg_quant, 3_avg_quant
+avg_quant, 1_avg_quant, 2_avg_quant, 3_avg_quant
 SELECT CONDITION-VECT([sigma]):
 1.state='NY'
 2.state='NJ'
