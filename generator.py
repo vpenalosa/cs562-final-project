@@ -58,11 +58,50 @@ def parse_queries_file(filename):
     return all_queries
 
 def main():
-    input_file = sys.argv[1] if len(sys.argv) > 1 else "queries.txt"
-    queries = parse_queries_file(input_file)
-    
+    input_file = sys.argv[1] if len(sys.argv) > 1 else None
+
+    if input_file and os.path.exists(input_file):
+        queries = parse_queries_file(input_file)
+    else:
+        if input_file:
+            print(f"File '{input_file}' not found. Switching to interactive mode.\n")
+        else:
+            print("No file provided. Switching to interactive mode.\n")
+
+        phi = {"S": [], "n": 0, "V": [], "F": [], "sigma": {}, "G": ""}
+
+        raw = input("SELECT ATTRIBUTE(S):\n> ")
+        phi["S"] = [x.strip() for x in raw.split(",")]
+
+        raw = input("\nNUMBER OF GROUPING VARIABLES(n):\n> ")
+        num = re.search(r'\d+', raw)
+        phi["n"] = int(num.group()) if num else 0
+
+        raw = input("\nGROUPING ATTRIBUTES(V):\n> ")
+        phi["V"] = [x.strip() for x in raw.split(",")]
+
+        raw = input("\nF-VECT([F]):\n> ")
+        phi["F"] = [x.strip() for x in raw.split(",")]
+
+        print("\nSELECT CONDITION-VECT([sigma]):")
+        print(f"(Enter {phi['n']} condition(s), one per line, e.g. 1.state='NY')")
+        for _ in range(phi["n"]):
+            line = input("> ").strip()
+            is_match = re.search(r"([a-zA-Z0-9]+)\.(.*)", line)
+            if is_match:
+                var, cond = is_match.groups()
+                py_cond = cond.replace("=", "==")
+                if "==" in py_cond:
+                    parts = py_cond.split("==")
+                    phi["sigma"][var.strip()] = f"row['{parts[0].strip()}']=={parts[1].strip()}"
+
+        raw = input("\nHAVING CONDITION(G):\n> ")
+        phi["G"] = re.sub(r"\b([a-zA-Z0-9]+)_", r"obj.v\1_", raw).strip()
+
+        queries = [phi]
+
     if not queries:
-        print("No queries found. Check your queries.txt formatting.")
+        print("No queries found.")
         return
 
     for index, phi in enumerate(queries):
