@@ -8,6 +8,7 @@ def parse_queries_file(filename):
         print(f"Error: {filename} not found.")
         return []
     
+    #create list of queries
     all_queries = []
     current_config = None
     curr_section = ""
@@ -16,11 +17,14 @@ def parse_queries_file(filename):
         for line in f:
             clean_line = line.strip()
             if not clean_line: continue
-            
-            # Use headers from your file  to split queries
+
+            #mark start of query using S phi operator
             if "SELECT ATTRIBUTE" in clean_line.upper():
+
+                #save previous query, if one is available
                 if current_config:
                     all_queries.append(current_config)
+                #set up phi operators for current query
                 current_config = {"S": [], "n": 0, "V": [], "F": [], "sigma": {}, "G": ""}
                 curr_section = "S"
             elif "NUMBER OF GROUPING" in clean_line.upper(): curr_section = "n"
@@ -29,7 +33,7 @@ def parse_queries_file(filename):
             elif "SELECT CONDITION-VECT" in clean_line.upper(): curr_section = "sigma"
             elif "HAVING CONDITION" in clean_line.upper(): curr_section = "G"
             else:
-                if not current_config: continue
+                #connect data to correct part of the current phi operator
                 if curr_section == "S": 
                     current_config["S"] = [x.strip() for x in clean_line.split(",")]
                 elif curr_section == "n": 
@@ -40,18 +44,27 @@ def parse_queries_file(filename):
                 elif curr_section == "F": 
                     current_config["F"] = [x.strip() for x in clean_line.split(",")]
                 elif curr_section == "sigma":
-                    # Matches 1.state='NY' or 4.state='NY' 
+
+                    #puts condition into python form
                     is_match = re.search(r"([a-zA-Z0-9]+)\.(.*)", clean_line)
                     if is_match:
+
+                        #split is_match into variable and condition (1.state='NY' to var=1, cond="state='NY'")
                         var, cond = is_match.groups()
+
+                        #turn condition into python form (state='NY' to state=='NY')
                         py_cond = cond.replace("=", "==")
+
+                        #split condition into variable and value
                         if "==" in py_cond:
                             parts = py_cond.split("==")
                             current_config["sigma"][var.strip()] = f"row['{parts[0].strip()}']=={parts[1].strip()}"
                 elif curr_section == "G":
-                    # Replaces 1_sum with obj.v1_sum 
+
+                    #replaces 1_sum with obj.v1_sum 
                     current_config["G"] = re.sub(r"\b([a-zA-Z0-9]+)_", r"obj.v\1_", clean_line).strip()
 
+        #add current query configuration to list of queries
         if current_config:
             all_queries.append(current_config)
             
@@ -101,24 +114,28 @@ def main():
         queries = [phi]
 
     if not queries:
-        print("No queries found.")
+        print("No queries found in file.")
         return
 
-    for index, phi in enumerate(queries):
-        print(f"\n{'='*20} OUTPUT FOR QUERY {index + 1} {'='*20}")
+    for query_num, phi in enumerate(queries):
+        print(f"OUTPUT FOR QUERY {query_num + 1}:")
 
-        # 1. MF-Structure Class
+        #transform values from F to work for python (1_sum_quant turns into self.v1_sum_quant=0)
         agg_init = "\n".join([f"        self.v{agg} = 0" for agg in phi["F"]])
+
+        #count how many rows satisfy specific condition for each grouping variable
         count_trackers = "\n".join([f"        self.v{v}_count_quant = 0" for v in phi["sigma"].keys()])
+
+        #self.grouping_attribute (self.cust)
         group_init = "\n".join([f"        self.{attr} = {attr}" for attr in phi["V"]])
         
         class_def = f"""
-class MFStructureRow:
-    def __init__(self, {', '.join(phi['V'])}):
-{group_init}
-{agg_init}
-{count_trackers}
-"""
+    class MFStructureRow:
+        def __init__(self, {', '.join(phi['V'])}):
+    {group_init}
+    {agg_init}
+    {count_trackers}
+        """
 
         # 2. Scans
         scans_code = ""
