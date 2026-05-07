@@ -1,29 +1,13 @@
 SELECT ATTRIBUTE(S):
-cust, 1_sum_quant, 2_sum_quant, 3_sum_quant
+cust, avg_quant, 1_avg_quant, 2_avg_quant, 3_avg_quant
 NUMBER OF GROUPING VARIABLES(n):
 3
 GROUPING ATTRIBUTES(V):
 cust
 F-VECT([F]):
-1_sum_quant, 1_avg_quant, 2_sum_quant, 3_sum_quant, 3_avg_quant
+1_avg_quant, 2_avg_quant, 3_avg_quant
 SELECT CONDITION-VECT([sigma]):
 1.state='NY'
 2.state='NJ'
 3.state='CT'
 HAVING CONDITION(G):
-1_sum_quant > 2 * 2_sum_quant or 1_avg_quant > 3_avg_quant
-
-SELECT ATTRIBUTE(S):
-cust, 4_sum_quant, 5_sum_quant, 6_sum_quant
-NUMBER OF GROUPING VARIABLES(n):
-3
-GROUPING ATTRIBUTES(V):
-cust
-F-VECT([F]):
-4_sum_quant, 4_avg_quant, 5_sum_quant, 6_sum_quant, 6_avg_quant
-SELECT CONDITION-VECT([sigma]):
-4.state='NY'
-5.state='NJ'
-6.state='CT'
-HAVING CONDITION(G):
-4_sum_quant > 2 * 5_sum_quant or 4_avg_quant > 6_avg_quant
