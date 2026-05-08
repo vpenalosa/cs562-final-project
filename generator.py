@@ -3,6 +3,37 @@ import os
 import re
 import sys
 
+def process_sigma_line(clean_line, config_dict):
+    #helper function to parse sigma
+    #format: groupvar_num.column_name(operator)value
+    #ex: 1.state='NY'
+    m = re.match(r"(\d+)\s*\.\s*(\w+)\s*(!=|<>|<=|>=|<|>|=)\s*(.+)$", clean_line)
+    if m:
+        #assign values
+        #ex: var=1, col=state, op="=", raw_val='NY'
+        var, col, op, raw_val = m.group(1), m.group(2), m.group(3), m.group(4).strip()
+        #convert sql operators to work for python
+        py_op = "!=" if op == "<>" else ("==" if op == "=" else op)
+        #normalizes values surrounded by quotes to be ''
+        #ex: 'NY'
+        if (raw_val.startswith("'") and raw_val.endswith("'")) or \
+           (raw_val.startswith('"') and raw_val.endswith('"')):
+            val = f"'{raw_val[1:-1]}'"
+        else:
+            try: int(raw_val); val = raw_val
+            except ValueError:
+                try: float(raw_val); val = raw_val
+                except ValueError: val = f"'{raw_val}'"
+        #convert to python expression
+        #ex: 1.state='NY' becomes row['state']=='NY'
+        predicate = f"row['{col}']{py_op}{val}"
+        #create new list for this specific grouping variable
+        if var not in config_dict["sigma"]:
+            config_dict["sigma"][var] = []
+        #add predicate to this variable's list
+        config_dict["sigma"][var].append(predicate)
+
+
 def parse_queries_file(filename):
     if not os.path.exists(filename):
         print(f"Error: {filename} not found.")
@@ -20,6 +51,8 @@ def parse_queries_file(filename):
             if "SELECT ATTRIBUTE" in clean_line.upper():
                 if current_config:
                     all_queries.append(current_config)
+                #create configuration of the phi operators
+                #query information will be parsed from input file to go here
                 current_config = {"S": [], "n": 0, "V": [], "F": [], "sigma": {}, "G": ""}
                 curr_section = "S"
             elif "NUMBER OF GROUPING" in clean_line.upper(): curr_section = "n"
@@ -28,41 +61,31 @@ def parse_queries_file(filename):
             elif "SELECT CONDITION" in clean_line.upper(): curr_section = "sigma"
             elif "HAVING CONDITION" in clean_line.upper(): curr_section = "G"
             else:
+                #if the current line does not have a label, assume it is data
                 if curr_section == "S":
                     current_config["S"] = [x.strip() for x in clean_line.split(",")]
                 elif curr_section == "n":
+                    #look for first instance of number
                     num = re.search(r'\d+', clean_line)
-                    if num: current_config["n"] = int(num.group())
+                    if num:
+                        current_config["n"] = int(num.group())
                 elif curr_section == "V":
                     current_config["V"] = [x.strip() for x in clean_line.split(",")]
                 elif curr_section == "F":
                     current_config["F"] = [x.strip() for x in clean_line.split(",")]
                 elif curr_section == "sigma":
-                    # Each line: "1.col op val" -- multiple lines allowed per variable
-                    # Operators: =, !=, <>, <, >, <=, >=
-                    m = re.match(r"(\d+)\s*\.\s*(\w+)\s*(!=|<>|<=|>=|<|>|=)\s*(.+)$", clean_line)
-                    if m:
-                        var, col, op, raw_val = m.group(1), m.group(2), m.group(3), m.group(4).strip()
-                        py_op = "!=" if op == "<>" else ("==" if op == "=" else op)
-                        if (raw_val.startswith("'") and raw_val.endswith("'")) or \
-                           (raw_val.startswith('"') and raw_val.endswith('"')):
-                            val = f"'{raw_val[1:-1]}'"
-                        else:
-                            try: int(raw_val); val = raw_val
-                            except ValueError:
-                                try: float(raw_val); val = raw_val
-                                except ValueError: val = f"'{raw_val}'"
-                        predicate = f"row['{col}']{py_op}{val}"
-                        if var not in current_config["sigma"]:
-                            current_config["sigma"][var] = []
-                        current_config["sigma"][var].append(predicate)
+                    process_sigma_line(clean_line, current_config)
                 elif curr_section == "G":
+                    #convert having clause to python expression
+                    #ex: 1_sum_quant > 500 turns into obj.v1_sum_quant > 500
                     current_config["G"] = re.sub(r"\b(\d+)_", r"obj.v\1_", clean_line).strip()
-
+        
+        #add query data to list of query data to run later
         if current_config:
             all_queries.append(current_config)
             
     return all_queries
+
 
 def main():
     input_file = sys.argv[1] if len(sys.argv) > 1 else None
@@ -74,7 +97,8 @@ def main():
             print(f"File '{input_file}' not found. Switching to interactive mode.\n")
         else:
             print("No file provided. Switching to interactive mode.\n")
-
+        
+        #same logic as parse_queries_file
         phi = {"S": [], "n": 0, "V": [], "F": [], "sigma": {}, "G": ""}
         phi["S"] = [x.strip() for x in input("SELECT ATTRIBUTE(S):\n> ").split(",")]
         num_raw = input("\nNUMBER OF GROUPING VARIABLES(n):\n> ")
@@ -87,30 +111,14 @@ def main():
         while True:
             line = input("> ").strip()
             if not line: break
-            m = re.match(r"(\d+)\s*\.\s*(\w+)\s*(!=|<>|<=|>=|<|>|=)\s*(.+)$", line)
-            if m:
-                var, col, op, raw_val = m.group(1), m.group(2), m.group(3), m.group(4).strip()
-                py_op = "!=" if op == "<>" else ("==" if op == "=" else op)
-                if (raw_val.startswith("'") and raw_val.endswith("'")) or \
-                   (raw_val.startswith('"') and raw_val.endswith('"')):
-                    val = f"'{raw_val[1:-1]}'"
-                else:
-                    try: int(raw_val); val = raw_val
-                    except ValueError:
-                        try: float(raw_val); val = raw_val
-                        except ValueError: val = f"'{raw_val}'"
-                predicate = f"row['{col}']{py_op}{val}"
-                if var not in phi["sigma"]:
-                    phi["sigma"][var] = []
-                phi["sigma"][var].append(predicate)
+            process_sigma_line(line, phi)
 
         raw_g = input("\nHAVING CONDITION(G):\n> ").strip()
         phi["G"] = re.sub(r"\b(\d+)_", r"obj.v\1_", raw_g).strip() if raw_g else ""
         queries = [phi]
 
-    for query_num, phi in enumerate(queries):
-        # Auto-detect global aggs (e.g. "avg_quant") from S or F, rewrite as "0_avg_quant".
-        # They do not need to be declared in F -- referencing them in S is enough.
+    for phi in queries:
+        #auto-detect global aggs (e.g. "avg_quant") from S or F, rewrite as "0_avg_quant".
         global_pat = re.compile(r"^(sum|count|avg|min|max)_\w+$", re.IGNORECASE)
         phi["S"] = ["0_" + a if global_pat.match(a) else a for a in phi["S"]]
         phi["F"] = ["0_" + a if global_pat.match(a) else a for a in phi["F"]]
@@ -131,7 +139,7 @@ def main():
                 agg_init_lines.append(f"        self.v{agg} = 0")
         agg_init = "\n".join(agg_init_lines)
 
-        # Trackers for avg: one sum+count pair per (var_id, col)
+        #trackers for avg: one sum+count pair per (var_id, col)
         internal_trackers = []
         seen_avg_trackers = set()
         for agg in phi["F"]:
@@ -154,7 +162,7 @@ class MFStructureRow:
 {agg_init}
 {trackers_code}
 """
-        # 2. Scans -- one per grouping variable (var "0" = no condition = global)
+        # 2. Scans: one per grouping variable (var "0" = no condition = global)
         scans_code = ""
         for var_id, predicates in phi["sigma"].items():
             combined = " and ".join(predicates) if predicates else "True"
@@ -196,15 +204,24 @@ class MFStructureRow:
 """
 
         # 3. Finalize avgs
+        # Pre-compute global averages for each col so we can fall back to them
+        # when a grouping variable had no matching rows (cnt == 0).
         avg_finalize = ""
         for agg in phi["F"]:
             agg = agg.strip()
             avg_match = re.match(r"^(\d+)_avg_(\w+)$", agg, re.IGNORECASE)
             if avg_match:
                 v_id, col = avg_match.group(1), avg_match.group(2)
-                avg_finalize += f"\n        if obj.v{v_id}_cnt_{col} > 0: obj.v{agg} = obj.v{v_id}_sum_{col} / obj.v{v_id}_cnt_{col}"
+                # Build a parameterized WHERE clause over all grouping attributes
+                where_clause = " AND ".join(f"{attr} = %s" for attr in phi["V"])
+                avg_finalize += (
+                    f"\n        if obj.v{v_id}_cnt_{col} > 0: obj.v{agg} = obj.v{v_id}_sum_{col} / obj.v{v_id}_cnt_{col}"
+                    f"\n        else:"
+                    f"\n            cur.execute(\"SELECT AVG({col}) FROM sales WHERE {where_clause}\", [getattr(obj, a) for a in {phi['V']}])"
+                    f"\n            _row = cur.fetchone(); obj.v{agg} = float(_row[0] or 0) if _row else 0"
+                )
 
-        # Normalize having: AND/OR case-insensitive, = -> ==, <> -> !=
+        #normalize having: AND/OR case-insensitive, = -> ==, <> -> !=
         having_str = phi["G"]
         having_str = re.sub(r'\bAND\b', 'and', having_str, flags=re.IGNORECASE)
         having_str = re.sub(r'\bOR\b',  'or',  having_str, flags=re.IGNORECASE)
