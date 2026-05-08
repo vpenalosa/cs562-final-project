@@ -5,19 +5,11 @@ from dotenv import load_dotenv
 class MFStructureRow:
     def __init__(self, cust):
         self.cust = cust
-        self.vavg_quant = 0
-        self.v1_avg_quant = 0
-        self.v2_avg_quant = 0
-        self.v3_avg_quant = 0
-        self.v_overall_sum = 0
-        self.v_overall_count = 0
-        self.vavg_quant = 0
         self.v1_sum_quant = 0
-        self.v1_count_quant = 0
         self.v2_sum_quant = 0
-        self.v2_count_quant = 0
         self.v3_sum_quant = 0
-        self.v3_count_quant = 0
+        self.v0_sum_quant = 0
+
 
 def query():
     load_dotenv()
@@ -33,59 +25,40 @@ def query():
 
     cur.execute("SELECT * FROM sales")
     for row in cur:
-        key = tuple(row[attr] for attr in ['cust'])
-        obj = mf_struct[key]
-        obj.v_overall_sum += row['quant']
-        obj.v_overall_count += 1
-
-    cur.execute("SELECT * FROM sales")
-    for row in cur:
         if row['state']=='NY':
             key = tuple(row[attr] for attr in ['cust'])
             obj = mf_struct[key]
-            for agg in ['avg_quant', '1_avg_quant', '2_avg_quant', '3_avg_quant']:
-                if agg.startswith("1_"):
-                    if "sum" in agg: setattr(obj, 'v' + agg, getattr(obj, 'v' + agg) + row['quant'])
-                    if "count" in agg: setattr(obj, 'v' + agg, getattr(obj, 'v' + agg) + 1)
             obj.v1_sum_quant += row['quant']
-            obj.v1_count_quant += 1
 
     cur.execute("SELECT * FROM sales")
     for row in cur:
         if row['state']=='NJ':
             key = tuple(row[attr] for attr in ['cust'])
             obj = mf_struct[key]
-            for agg in ['avg_quant', '1_avg_quant', '2_avg_quant', '3_avg_quant']:
-                if agg.startswith("2_"):
-                    if "sum" in agg: setattr(obj, 'v' + agg, getattr(obj, 'v' + agg) + row['quant'])
-                    if "count" in agg: setattr(obj, 'v' + agg, getattr(obj, 'v' + agg) + 1)
             obj.v2_sum_quant += row['quant']
-            obj.v2_count_quant += 1
 
     cur.execute("SELECT * FROM sales")
     for row in cur:
         if row['state']=='CT':
             key = tuple(row[attr] for attr in ['cust'])
             obj = mf_struct[key]
-            for agg in ['avg_quant', '1_avg_quant', '2_avg_quant', '3_avg_quant']:
-                if agg.startswith("3_"):
-                    if "sum" in agg: setattr(obj, 'v' + agg, getattr(obj, 'v' + agg) + row['quant'])
-                    if "count" in agg: setattr(obj, 'v' + agg, getattr(obj, 'v' + agg) + 1)
             obj.v3_sum_quant += row['quant']
-            obj.v3_count_quant += 1
+
+    cur.execute("SELECT * FROM sales")
+    for row in cur:
+        if True:
+            key = tuple(row[attr] for attr in ['cust'])
+            obj = mf_struct[key]
+            obj.v0_sum_quant += row['quant']
 
 
     _global_res = []
     for key in mf_struct:
         obj = mf_struct[key]
 
-        if obj.v1_count_quant > 0: obj.v1_avg_quant = obj.v1_sum_quant / obj.v1_count_quant
-        if obj.v2_count_quant > 0: obj.v2_avg_quant = obj.v2_sum_quant / obj.v2_count_quant
-        if obj.v3_count_quant > 0: obj.v3_avg_quant = obj.v3_sum_quant / obj.v3_count_quant
-        if obj.v_overall_count > 0: obj.vavg_quant = obj.v_overall_sum / obj.v_overall_count
         
         res = {}
-        for attr in ['cust', 'avg_quant', '1_avg_quant', '2_avg_quant', '3_avg_quant']:
+        for attr in ['cust', '0_sum_quant', '1_sum_quant', '2_sum_quant', '3_sum_quant']:
             target = attr if attr in ['cust'] else 'v' + attr
             res[attr] = getattr(obj, target, 0)
         _global_res.append(res)
