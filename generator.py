@@ -88,6 +88,7 @@ def parse_queries_file(filename):
 
 
 def main():
+    #starts interactive mode if no queries.txt is given
     input_file = sys.argv[1] if len(sys.argv) > 1 else None
 
     if input_file and os.path.exists(input_file):
@@ -107,7 +108,8 @@ def main():
         phi["V"] = [x.strip() for x in input("\nGROUPING ATTRIBUTES(V):\n> ").split(",")]
         phi["F"] = [x.strip() for x in input("\nF-VECT([F]):\n> ").split(",")]
 
-        print(f"\nSELECT CONDITION-VECT([sigma]): (Enter predicates as var.col op val, blank to finish)")
+        # loop through vectors until done
+        print(f"\nSELECT CONDITION-VECT([sigma]): (Enter predicates as var.col predicate value (e.g. 1.state='NY'), blank to finish)")
         while True:
             line = input("> ").strip()
             if not line: break
@@ -117,8 +119,9 @@ def main():
         phi["G"] = re.sub(r"\b(\d+)_", r"obj.v\1_", raw_g).strip() if raw_g else ""
         queries = [phi]
 
+    # building the mf structure from the phi operator
     for phi in queries:
-        #auto-detect global aggs (e.g. "avg_quant") from S or F, rewrite as "0_avg_quant".
+        #detect global aggregates and rewrite as '0_agg_col'
         global_pat = re.compile(r"^(sum|count|avg|min|max)_\w+$", re.IGNORECASE)
         phi["S"] = ["0_" + a if global_pat.match(a) else a for a in phi["S"]]
         phi["F"] = ["0_" + a if global_pat.match(a) else a for a in phi["F"]]
@@ -139,7 +142,7 @@ def main():
                 agg_init_lines.append(f"        self.v{agg} = 0")
         agg_init = "\n".join(agg_init_lines)
 
-        #trackers for avg: one sum+count pair per (var_id, col)
+        #initialize count and sum if they arent there already to help compute average (if needed)
         internal_trackers = []
         seen_avg_trackers = set()
         for agg in phi["F"]:
@@ -152,9 +155,11 @@ def main():
                     internal_trackers.append(f"        self.v{v_id}_sum_{col} = 0")
                     internal_trackers.append(f"        self.v{v_id}_cnt_{col} = 0")
 
+        # storing the group aggregates in each row
         trackers_code = "\n".join(internal_trackers)
         group_init = "\n".join([f"        self.{attr} = {attr}" for attr in phi["V"]])
         
+        # creating a single row of the table
         class_def = f"""
 class MFStructureRow:
     def __init__(self, {', '.join(phi['V'])}):
@@ -165,10 +170,13 @@ class MFStructureRow:
         # 2. Scans: one per grouping variable (var "0" = no condition = global)
         scans_code = ""
         for var_id, predicates in phi["sigma"].items():
+            # if there are multiple sigma predicates for the same grouping variable, imply an AND
             combined = " and ".join(predicates) if predicates else "True"
 
+            # matches aggregates to the grouping variable so it only updates the var aggregates in one scan
             var_aggs = [a.strip() for a in phi["F"] if re.match(rf"^{var_id}_", a.strip(), re.IGNORECASE)]
 
+            # compute the aggregates
             agg_update_lines = []
             for agg in var_aggs:
                 func_match = re.match(r"^\d+_(sum|count|avg|min|max)_(\w+)$", agg, re.IGNORECASE)
@@ -194,6 +202,7 @@ class MFStructureRow:
 
             agg_updates = "\n".join(agg_update_lines) if agg_update_lines else "            pass"
 
+            # generates the scans
             scans_code += f"""
     cur.execute("SELECT * FROM sales")
     for row in cur:
@@ -203,17 +212,15 @@ class MFStructureRow:
 {agg_updates}
 """
 
-        # 3. Finalize avgs
-        # Pre-compute global averages for each col so we can fall back to them
-        # when a grouping variable had no matching rows (cnt == 0).
+        # aggregates all the averages based on the counts/sums
         avg_finalize = ""
         for agg in phi["F"]:
             agg = agg.strip()
             avg_match = re.match(r"^(\d+)_avg_(\w+)$", agg, re.IGNORECASE)
             if avg_match:
                 v_id, col = avg_match.group(1), avg_match.group(2)
-                # Build a parameterized WHERE clause over all grouping attributes
                 where_clause = " AND ".join(f"{attr} = %s" for attr in phi["V"])
+                # if no predicate is given, just compute the global average
                 avg_finalize += (
                     f"\n        if obj.v{v_id}_cnt_{col} > 0: obj.v{agg} = obj.v{v_id}_sum_{col} / obj.v{v_id}_cnt_{col}"
                     f"\n        else:"
@@ -221,7 +228,8 @@ class MFStructureRow:
                     f"\n            _row = cur.fetchone(); obj.v{agg} = float(_row[0] or 0) if _row else 0"
                 )
 
-        #normalize having: AND/OR case-insensitive, = -> ==, <> -> !=
+        # lets AND/OR be case-sensitive
+        # allows all types of predicates like =, ==, >=, <>, !=
         having_str = phi["G"]
         having_str = re.sub(r'\bAND\b', 'and', having_str, flags=re.IGNORECASE)
         having_str = re.sub(r'\bOR\b',  'or',  having_str, flags=re.IGNORECASE)
@@ -231,6 +239,7 @@ class MFStructureRow:
         having_cond = f"if {having_str}:" if having_str else ""
         res_indent  = "            " if having_str else "        "
 
+        # the final logic printed out for the mf table
         final_logic = f"""
     _global_res = []
     for key in mf_struct:
@@ -243,6 +252,7 @@ class MFStructureRow:
 {res_indent}    res[attr] = getattr(obj, target, 0)
 {res_indent}_global_res.append(res)
 """
+        # the python file being printed out
         tmp = f"""
 import os, psycopg2, psycopg2.extras, tabulate
 from dotenv import load_dotenv
