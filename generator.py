@@ -20,6 +20,8 @@ def process_sigma_line(clean_line, config_dict):
            (raw_val.startswith('"') and raw_val.endswith('"')):
             val = f"'{raw_val[1:-1]}'"
         else:
+            #turn value being compared into something python can use
+            #'NY' instead of NY, float value if necessary
             try: int(raw_val); val = raw_val
             except ValueError:
                 try: float(raw_val); val = raw_val
