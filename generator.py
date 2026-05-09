@@ -133,7 +133,7 @@ def main():
         if any(a.startswith("0_") for a in phi["F"]):
             phi["sigma"]["0"] = []  # no condition = every row matches
 
-        # 1. MF Class setup
+        # mf class setup
         agg_init_lines = []
         for agg in phi["F"]:
             agg = agg.strip()
@@ -169,7 +169,7 @@ class MFStructureRow:
 {agg_init}
 {trackers_code}
 """
-        # 2. Scans: one per grouping variable (var "0" = no condition = global)
+        # one scan per grouping variable
         scans_code = ""
         for var_id, predicates in phi["sigma"].items():
             # if there are multiple sigma predicates for the same grouping variable, imply an AND
